@@ -182,10 +182,12 @@ class WayvdWindow(Adw.ApplicationWindow):
         for index, action in enumerate(
             ["back", "home", "recents", "power", "volume-down", "volume-up", "mute"]
         ):
-            item = button(action.replace("-", " ").title(), self.send_key)
+            item = Gtk.Button(label=action.replace("-", " ").title())
             item.set_name(action)
             if action.startswith("volume-"):
                 self.add_volume_repeat(item, action)
+            else:
+                item.connect("clicked", self.send_key)
             grid.attach(item, index % 4, index // 4, 1, 1)
         row = Adw.ActionRow(title="AVD-style buttons")
         row.add_suffix(grid)
@@ -358,21 +360,34 @@ class WayvdWindow(Adw.ApplicationWindow):
         self.run(["key", source.get_name()])
 
     def add_volume_repeat(self, item, action):
-        """Hold a volume button to repeat Android's bounded volume action."""
-        gesture = Gtk.GestureLongPress()
-        gesture.connect("pressed", self.volume_long_press, item, action)
-        gesture.connect("cancelled", self.volume_long_press_end, item)
+        """Tap once or hold to repeat Android's bounded volume action."""
+        gesture = Gtk.GestureClick()
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        gesture.connect("pressed", self.volume_press, item, action)
+        gesture.connect("released", self.volume_release, item)
         item.add_controller(gesture)
 
-    def volume_long_press(self, _gesture, _x, _y, item, action):
+    def volume_press(self, _gesture, _presses, _x, _y, item, action):
+        # A tap changes volume once. A hold waits briefly before repetition so
+        # normal single clicks retain predictable AVD-style behavior.
+        self.run(["key", action])
         self.volume_repeaters[item] = GLib.timeout_add(
-            250, self.repeat_volume_key, action
+            350, self.begin_volume_repeat, item, action
         )
 
-    def volume_long_press_end(self, _gesture, item):
+    def volume_release(self, _gesture, _presses, _x, _y, item):
         repeat_id = self.volume_repeaters.pop(item, None)
         if repeat_id:
             GLib.source_remove(repeat_id)
+
+    def begin_volume_repeat(self, item, action):
+        if item not in self.volume_repeaters:
+            return False
+        self.repeat_volume_key(action)
+        self.volume_repeaters[item] = GLib.timeout_add(
+            175, self.repeat_volume_key, action
+        )
+        return False
 
     def repeat_volume_key(self, action):
         # Android clamps volume at its own min/max; repeated events are safe.
