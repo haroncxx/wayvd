@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This helper is launched only through pkexec. It limits root operations to
+# bind mounts inside the invoking user's Waydroid shared-media directory.
+if [[ $EUID -ne 0 || -z "${PKEXEC_UID:-}" ]]; then
+  printf 'wayvd-mount-helper must be launched through pkexec.\n' >&2
+  exit 1
+fi
+
+usage() {
+  printf 'Usage: wayvd-mount-helper {mount PATH NAME|unmount NAME}\n' >&2
+}
+
+user_home="$(getent passwd "$PKEXEC_UID" | cut -d: -f6)"
+if [[ -z "$user_home" || ! -d "$user_home" ]]; then
+  printf 'Could not determine the invoking user home directory.\n' >&2
+  exit 1
+fi
+media_dir="$user_home/.local/share/waydroid/data/media/0"
+
+validate_name() {
+  if [[ ! "$1" =~ ^[[:alnum:]][[:alnum:]._\ -]{0,63}$ ]]; then
+    printf 'Invalid Android folder name "%s".\n' "$1" >&2
+    exit 2
+  fi
+}
+
+case "${1:-}" in
+  mount)
+    [[ $# -eq 3 ]] || { usage; exit 2; }
+    source="$(realpath -e -- "$2")" || {
+      printf 'Host folder does not exist: %s\n' "$2" >&2
+      exit 1
+    }
+    [[ -d "$source" ]] || { printf 'Host path is not a directory: %s\n' "$source" >&2; exit 1; }
+    validate_name "$3"
+    target="$media_dir/$3"
+    if [[ -L "$target" ]]; then
+      printf 'Refusing symbolic-link mount target: %s\n' "$target" >&2
+      exit 1
+    fi
+    mkdir -p "$target"
+    if mountpoint -q "$target"; then
+      printf '%s is already shared with Android as %s.\n' "$source" "$3"
+      exit 0
+    fi
+    mount --bind "$source" "$target"
+    printf 'Shared %s with Android as %s.\n' "$source" "$3"
+    ;;
+  unmount)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    validate_name "$2"
+    target="$media_dir/$2"
+    if ! mountpoint -q "$target"; then
+      printf 'Android folder %s is not currently shared.\n' "$2" >&2
+      exit 1
+    fi
+    umount "$target"
+    printf 'Removed the Waydroid share for Android folder %s.\n' "$2"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

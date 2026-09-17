@@ -97,11 +97,12 @@ unshare_folder() {
 }
 
 # Check a specific Android-visible shared folder without changing any mounts.
+# findmnt can inspect the mount table without elevating or prompting for sudo.
 show_downloads_status() {
   local name="$1"
   validate_folder_name "$name"
   local target="$android_media_dir/$name"
-  if sudo mountpoint -q "$target"; then
+  if findmnt -T "$target" -n -o TARGET 2>/dev/null | grep -Fxq "$target"; then
     printf 'Android folder %s is currently shared.\n' "$name"
   else
     printf 'Android folder %s is not currently shared.\n' "$name"

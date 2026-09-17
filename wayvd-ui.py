@@ -15,6 +15,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 
 WAYVD = os.environ.get("WAYVD_COMMAND", "wayvd")
+MOUNT_HELPER = "/usr/local/libexec/wayvd-mount-helper"
 PROFILES = ["portrait", "fold", "landscape", "fold-landscape", "default", "last", "size"]
 
 
@@ -84,6 +85,7 @@ class WayvdWindow(Adw.ApplicationWindow):
         super().__init__(application=application, title="wayvd")
         self.set_default_size(660, 720)
         self.recording = None
+        self.volume_repeaters = {}
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -180,8 +182,11 @@ class WayvdWindow(Adw.ApplicationWindow):
         for index, action in enumerate(
             ["back", "home", "recents", "power", "volume-down", "volume-up", "mute"]
         ):
-            grid.attach(button(action.replace("-", " ").title(), self.send_key, None), index % 4, index // 4, 1, 1)
-            grid.get_child_at(index % 4, index // 4).set_name(action)
+            item = button(action.replace("-", " ").title(), self.send_key)
+            item.set_name(action)
+            if action.startswith("volume-"):
+                self.add_volume_repeat(item, action)
+            grid.attach(item, index % 4, index // 4, 1, 1)
         row = Adw.ActionRow(title="AVD-style buttons")
         row.add_suffix(grid)
         group.add(row)
@@ -208,6 +213,28 @@ class WayvdWindow(Adw.ApplicationWindow):
                     success()
             except OSError as error:
                 message = f"Could not run {WAYVD}: {error}"
+            GLib.idle_add(self.set_status, message)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def run_privileged(self, arguments):
+        """Use PolicyKit so GNOME shows its native authentication dialog."""
+        self.set_status("Waiting for system authentication.")
+
+        def worker():
+            try:
+                result = subprocess.run(
+                    ["pkexec", MOUNT_HELPER, *arguments],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                output = (result.stdout or result.stderr).strip()
+                message = output or "Completed."
+                if result.returncode:
+                    message = f"Command failed: {message}"
+            except OSError as error:
+                message = f"Could not start PolicyKit authentication: {error}"
             GLib.idle_add(self.set_status, message)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -253,14 +280,16 @@ class WayvdWindow(Adw.ApplicationWindow):
         if not path:
             self.set_status("Choose a host folder first.")
             return
-        self.run(["mount", path, *([name] if name else [])])
+        if not name:
+            name = Path(path).name
+        self.run_privileged(["mount", path, name])
 
     def unmount_folder(self, *_args):
         name = self.folder_name.get_text().strip()
         if not name:
             self.set_status("Enter the Android folder name to unmount.")
             return
-        self.run(["unmount", name])
+        self.run_privileged(["unmount", name])
 
     def mount_status(self, *_args):
         name = self.folder_name.get_text().strip()
@@ -327,6 +356,32 @@ class WayvdWindow(Adw.ApplicationWindow):
 
     def send_key(self, source):
         self.run(["key", source.get_name()])
+
+    def add_volume_repeat(self, item, action):
+        """Hold a volume button to repeat Android's bounded volume action."""
+        gesture = Gtk.GestureLongPress()
+        gesture.connect("pressed", self.volume_long_press, item, action)
+        gesture.connect("cancelled", self.volume_long_press_end, item)
+        item.add_controller(gesture)
+
+    def volume_long_press(self, _gesture, _x, _y, item, action):
+        self.volume_repeaters[item] = GLib.timeout_add(
+            250, self.repeat_volume_key, action
+        )
+
+    def volume_long_press_end(self, _gesture, item):
+        repeat_id = self.volume_repeaters.pop(item, None)
+        if repeat_id:
+            GLib.source_remove(repeat_id)
+
+    def repeat_volume_key(self, action):
+        # Android clamps volume at its own min/max; repeated events are safe.
+        subprocess.Popen(
+            [WAYVD, "key", action],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
 
 
 class WayvdApplication(Adw.Application):

@@ -59,6 +59,9 @@ Install it and its desktop entry:
 install -Dm755 wayvd-ui.py ~/.local/bin/wayvd-ui
 install -Dm644 io.github.haroncxx.wayvd.desktop \
   ~/.local/share/applications/io.github.haroncxx.wayvd.desktop
+sudo install -Dm755 wayvd-mount-helper /usr/local/libexec/wayvd-mount-helper
+sudo install -Dm644 io.github.haroncxx.wayvd.policy \
+  /usr/share/polkit-1/actions/io.github.haroncxx.wayvd.policy
 ```
 
 It requires the Python GTK4 and libadwaita bindings, provided as
@@ -68,6 +71,11 @@ Launch it from the app menu or with:
 ```bash
 wayvd-ui
 ```
+
+Folder mount and unmount operations in the UI use PolicyKit. GNOME displays
+its standard system authentication dialog when elevation is required; the UI
+never reads or stores a password. The privileged helper is limited to bind
+mounts inside the invoking user's Waydroid shared-media directory.
 
 ## Starting Waydroid
 
@@ -233,7 +241,9 @@ wayvd key menu
 
 These affect Waydroid, not the host operating system. For example,
 `wayvd key volume-up` changes Android media volume rather than your laptop's
-desktop volume. They can be assigned as GNOME custom keyboard shortcuts.
+desktop volume. They can be assigned as GNOME custom keyboard shortcuts. In
+the GUI, hold **Volume Up** or **Volume Down** to repeat the action; Android
+enforces its own minimum and maximum volume bounds.
 
 ## Help
 
