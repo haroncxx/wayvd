@@ -49,40 +49,68 @@ it persistent, then verify the command:
 wayvd --help
 ```
 
-## Graphical interface
+## wayvd-ui
 
-`wayvd-ui.py` is an optional GTK4/libadwaita frontend for the command-line
-utility. It delegates every action to `wayvd`; the CLI remains the source of
-truth for profiles, folder mounts, ADB, and Android controls.
+`wayvd-ui` is an optional GTK4/libadwaita control panel for `wayvd`. It
+delegates every action to the CLI, which remains the source of truth for
+profiles, folder mounts, ADB, captures, and Android controls.
 
-The GUI is executable directly from the checkout:
+The UI includes profile buttons, a custom-size field, folder and APK pickers,
+ADB/package actions, screenshots, recording, logcat, Android controls, and
+focused Android Emulator-style shortcuts.
+
+### Running the UI
+
+From a checkout that is on `PATH`:
 
 ```bash
 wayvd-ui
-```
-
-Install its desktop entry:
-
-```bash
-install -Dm644 io.github.haroncxx.wayvd.desktop \
-  ~/.local/share/applications/io.github.haroncxx.wayvd.desktop
-sudo install -Dm755 wayvd-mount-helper /usr/local/libexec/wayvd-mount-helper
-sudo install -Dm644 io.github.haroncxx.wayvd.policy \
-  /usr/share/polkit-1/actions/io.github.haroncxx.wayvd.policy
 ```
 
 It requires the Python GTK4 and libadwaita bindings, provided as
 `python3-gi`, `gir1.2-gtk-4.0`, and `gir1.2-adw-1` on Debian/Ubuntu systems.
-Launch it from the app menu or with:
+
+To add it to the application menu:
 
 ```bash
-wayvd-ui
+mkdir -p ~/.local/share/applications
+cp io.github.haroncxx.wayvd.desktop \
+  ~/.local/share/applications/io.github.haroncxx.wayvd.desktop
 ```
 
-Folder mount and unmount operations in the UI use PolicyKit. GNOME displays
-its standard system authentication dialog when elevation is required; the UI
-never reads or stores a password. The privileged helper is limited to bind
-mounts inside the invoking user's Waydroid shared-media directory.
+### Optional PolicyKit support for graphical folder mounts
+
+The UI can use GNOME's standard system authentication dialog for **Mount** and
+**Unmount**. This is optional: Waydroid shared folders are Linux bind mounts,
+which require administrator privileges. A GUI cannot safely read a terminal
+`sudo` password, so PolicyKit delegates authorization to the operating system.
+
+Install the narrowly scoped helper and PolicyKit action once:
+
+```bash
+sudo mkdir -p /usr/local/libexec /usr/share/polkit-1/actions
+
+sudo cp wayvd-mount-helper /usr/local/libexec/wayvd-mount-helper
+sudo chmod 755 /usr/local/libexec/wayvd-mount-helper
+
+sudo cp io.github.haroncxx.wayvd.policy \
+  /usr/share/polkit-1/actions/io.github.haroncxx.wayvd.policy
+sudo chmod 644 /usr/share/polkit-1/actions/io.github.haroncxx.wayvd.policy
+```
+
+After installing those files, select **Mount** or **Unmount** in `wayvd-ui`;
+GNOME displays its normal authentication dialog. The UI never reads or stores
+a password. The root helper only permits bind mounts in the invoking user's
+Waydroid shared-media directory.
+
+If you do **not** install PolicyKit support, every other GUI feature continues
+to work. Mount and unmount folders from a terminal instead, where `sudo` can
+prompt normally:
+
+```bash
+wayvd mount ~/Downloads
+wayvd unmount Downloads
+```
 
 When `wayvd-ui` is focused, it provides familiar Android Emulator-style
 shortcuts. They invoke the same Waydroid actions as the UI buttons and do not
