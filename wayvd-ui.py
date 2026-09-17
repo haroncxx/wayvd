@@ -125,7 +125,7 @@ class WayvdWindow(Adw.ApplicationWindow):
         self.set_default_size(660, 720)
         self.recording = None
         self.volume_repeaters = {}
-        self.start_process = None
+        self.start_pending = False
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -322,8 +322,8 @@ class WayvdWindow(Adw.ApplicationWindow):
         threading.Thread(target=worker, daemon=True).start()
 
     def start_profile(self, *_args):
-        if self.start_process and self.start_process.poll() is None:
-            self.set_status("Waydroid is already starting or open.")
+        if self.start_pending:
+            self.set_status("Waydroid profile change is already in progress.")
             return
         profile = PROFILES[self.profile.get_selected()]
         arguments = ["start"]
@@ -336,17 +336,19 @@ class WayvdWindow(Adw.ApplicationWindow):
         else:
             arguments.append(profile)
         try:
-            self.start_process = subprocess.Popen([WAYVD, *arguments])
+            subprocess.Popen([WAYVD, *arguments])
+            self.start_pending = True
             self.start_button.set_sensitive(False)
-            GLib.timeout_add(500, self.watch_start_process)
+            # `show-full-ui` remains alive while Waydroid is open, so process
+            # completion cannot indicate readiness. Debounce only the initial
+            # click burst, then allow deliberate profile changes.
+            GLib.timeout_add(1500, self.enable_start_button)
             self.set_status(f"Started profile: {profile}.")
         except OSError as error:
             self.set_status(f"Could not start {WAYVD}: {error}")
 
-    def watch_start_process(self):
-        if self.start_process and self.start_process.poll() is None:
-            return True
-        self.start_process = None
+    def enable_start_button(self):
+        self.start_pending = False
         self.start_button.set_sensitive(True)
         return False
 

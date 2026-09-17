@@ -149,7 +149,8 @@ wayvd start [PROFILE]
 Changing profiles stops the current Waydroid session before starting the next
 one, because Waydroid reads display overrides during session startup. The
 `show-full-ui` process is the sole session starter, preventing duplicate
-Waydroid clients when a profile is opened.
+Waydroid clients when a profile is opened. In `wayvd-ui`, select a new profile
+and choose **Start** again after the brief launch debounce to switch profiles.
 
 | Profile | Resolution | Description |
 |---|---:|---|
