@@ -34,14 +34,16 @@ system-level operations. Other commands run as the logged-in user.
 
 ## Installation
 
-Place the executable script in a directory on your `PATH`, such as
-`~/.local/bin`:
+For a development checkout, keep the repository anywhere convenient and add
+its directory to `PATH`:
 
 ```bash
-install -Dm755 wayvd ~/.local/bin/wayvd
+export PATH="$HOME/.local/bin/wayvd:$PATH"
 ```
 
-Ensure `~/.local/bin` is present in your shell `PATH`, then verify the command:
+This exposes both `wayvd` and `wayvd-ui` directly from the checkout, so local
+changes take effect immediately. Add the export to your shell profile to make
+it persistent, then verify the command:
 
 ```bash
 wayvd --help
@@ -53,10 +55,15 @@ wayvd --help
 utility. It delegates every action to `wayvd`; the CLI remains the source of
 truth for profiles, folder mounts, ADB, and Android controls.
 
-Install it and its desktop entry:
+The GUI is executable directly from the checkout:
 
 ```bash
-install -Dm755 wayvd-ui.py ~/.local/bin/wayvd-ui
+wayvd-ui
+```
+
+Install its desktop entry:
+
+```bash
 install -Dm644 io.github.haroncxx.wayvd.desktop \
   ~/.local/share/applications/io.github.haroncxx.wayvd.desktop
 sudo install -Dm755 wayvd-mount-helper /usr/local/libexec/wayvd-mount-helper
