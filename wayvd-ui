@@ -2,5 +2,8 @@
 set -euo pipefail
 
 # Keep the GUI source editable in the repository while exposing a stable
-# `wayvd-ui` command from the same directory.
-exec "$(dirname "$(readlink -f -- "$0")")/wayvd-ui.py" "$@"
+# `wayvd-ui` command from the same directory. Pass the CLI's absolute path so
+# the UI never mistakes this repository directory for the `wayvd` executable.
+script_dir="$(dirname "$(readlink -f -- "$0")")"
+export WAYVD_COMMAND="$script_dir/wayvd"
+exec "$script_dir/wayvd-ui.py" "$@"

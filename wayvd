@@ -146,6 +146,19 @@ run_adb() {
   adb -s "$target" "$@"
 }
 
+# Resolve an app's launcher activity before starting it. Some Android builds
+# reject `monkey -p PACKAGE` even when the package has a valid launcher entry.
+launch_package() {
+  local package="$1"
+  local activity
+  activity="$(run_adb shell cmd package resolve-activity --brief "$package" | tail -n 1)"
+  if [[ ! "$activity" =~ ^[^/]+/[^/]+$ ]]; then
+    printf 'Could not find a launchable activity for package: %s\n' "$package" >&2
+    exit 1
+  fi
+  run_adb shell am start -n "$activity"
+}
+
 # Store explicit and named display resolutions so `last` can restore them.
 save_last_profile() {
   mkdir -p "$state_dir"
@@ -264,7 +277,7 @@ case "${1:-}" in
     ;;
   launch)
     [[ $# -eq 2 ]] || { printf 'Usage: %s launch PACKAGE\n' "${0##*/}" >&2; exit 2; }
-    run_adb shell monkey -p "$2" 1
+    launch_package "$2"
     exit 0
     ;;
   clear)

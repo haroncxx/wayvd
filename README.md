@@ -261,7 +261,7 @@ other Android devices or emulators are connected.
 # Install an APK.
 wayvd install app/build/outputs/apk/debug/app-debug.apk
 
-# Launch an installed package.
+# Launch an installed package. wayvd resolves its launcher activity first.
 wayvd launch com.example.app
 
 # Reset an app to its first-run state.
