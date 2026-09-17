@@ -34,20 +34,32 @@ system-level operations. Other commands run as the logged-in user.
 
 ## Installation
 
-For a development checkout, keep the repository anywhere convenient and add
-its directory to `PATH`:
+Clone the repository into a user-local tools directory:
 
 ```bash
-export PATH="$HOME/.local/bin/wayvd:$PATH"
+mkdir -p ~/.local/bin
+git clone https://github.com/haroncxx/wayvd.git ~/.local/bin/wayvd
+chmod +x ~/.local/bin/wayvd/wayvd ~/.local/bin/wayvd/wayvd-ui
+```
+
+Add the checkout to your shell `PATH`:
+
+```bash
+echo 'export PATH="$HOME/.local/bin/wayvd:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 This exposes both `wayvd` and `wayvd-ui` directly from the checkout, so local
-changes take effect immediately. Add the export to your shell profile to make
-it persistent, then verify the command:
+changes take effect immediately and can be committed and pushed from the same
+directory. Verify the command:
 
 ```bash
 wayvd --help
 ```
+
+For another shell, add the same `export PATH=...` line to its startup file.
+See [wayvd-ui](#wayvd-ui) for the optional graphical launcher and PolicyKit
+folder-mount support.
 
 ## wayvd-ui
 
