@@ -22,6 +22,7 @@ Commands:
   screenshot [FILE]  Save a PNG screenshot (default: ~/Pictures/waydroid.png)
   record FILE        Record the display to an MP4; press Ctrl-C to finish
   logcat [ARGS...]   Stream Android logcat, optionally with logcat arguments
+  vol PERCENT        Set Android media volume from 0 to 100
   key ACTION         Send an AVD-style button action
 
 Options:
@@ -220,6 +221,35 @@ send_key() {
   run_adb shell input keyevent "$keycode"
 }
 
+# Convert a familiar percentage into Android's device-specific STREAM_MUSIC
+# index. Android releases and vendors can use different maximum index values.
+set_volume() {
+  local percent="$1"
+  if [[ ! "$percent" =~ ^([0-9]|[1-9][0-9]|100)$ ]]; then
+    printf 'Invalid volume "%s"; use a whole number from 0 to 100.\n' "$percent" >&2
+    exit 2
+  fi
+  local maximum
+  maximum="$(run_adb shell dumpsys audio | awk '
+    /STREAM_MUSIC:/ { music_stream = 1; next }
+    music_stream && /Max:/ {
+      for (field = 1; field <= NF; field++) {
+        if ($field == "Max:") {
+          print $(field + 1)
+          exit
+        }
+      }
+    }
+  ')"
+  if [[ ! "$maximum" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'Could not determine Waydroid media volume range.\n' >&2
+    exit 1
+  fi
+  local index=$(( (maximum * percent + 50) / 100 ))
+  run_adb shell media volume --stream 3 --set "$index"
+  printf 'Set Android media volume to %s%%.\n' "$percent"
+}
+
 # Dispatch non-start commands first. Starting is parsed separately because it
 # accepts a profile name or the two-word `size WIDTHxHEIGHT` profile.
 case "${1:-}" in
@@ -296,6 +326,11 @@ case "${1:-}" in
     # Pass any remaining arguments through unchanged, for example `*:E`.
     shift
     run_adb logcat "$@"
+    ;;
+  vol)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s vol PERCENT\n' "${0##*/}" >&2; exit 2; }
+    set_volume "$2"
+    exit 0
     ;;
   key)
     [[ $# -eq 2 ]] || { printf 'Usage: %s key ACTION\n' "${0##*/}" >&2; exit 2; }
