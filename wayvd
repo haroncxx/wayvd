@@ -167,6 +167,8 @@ save_last_profile() {
 
 # Apply display overrides before starting a fresh Waydroid session. Waydroid
 # reads these properties at session startup, not while its display is live.
+# `show-full-ui` owns session startup; starting a second session in parallel
+# creates duplicate Waydroid clients and can leave stale UI processes behind.
 launch_profile() {
   if [[ -n "$width" && -n "$height" ]]; then
     save_last_profile
@@ -174,7 +176,6 @@ launch_profile() {
   waydroid prop set persist.waydroid.width "$width"
   waydroid prop set persist.waydroid.height "$height"
   waydroid session stop >/dev/null 2>&1 || true
-  waydroid session start >/dev/null 2>&1 &
   exec waydroid show-full-ui
 }
 

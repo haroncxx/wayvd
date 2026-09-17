@@ -125,6 +125,7 @@ class WayvdWindow(Adw.ApplicationWindow):
         self.set_default_size(660, 720)
         self.recording = None
         self.volume_repeaters = {}
+        self.start_process = None
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -173,7 +174,8 @@ class WayvdWindow(Adw.ApplicationWindow):
         group.add(custom)
 
         actions = Adw.ActionRow(title="Waydroid")
-        actions.add_suffix(button("Start", self.start_profile, "suggested-action"))
+        self.start_button = button("Start", self.start_profile, "suggested-action")
+        actions.add_suffix(self.start_button)
         actions.add_suffix(button("Stop", self.stop_session, "destructive-action"))
         actions.add_suffix(button("Status", self.status_command))
         group.add(actions)
@@ -320,6 +322,9 @@ class WayvdWindow(Adw.ApplicationWindow):
         threading.Thread(target=worker, daemon=True).start()
 
     def start_profile(self, *_args):
+        if self.start_process and self.start_process.poll() is None:
+            self.set_status("Waydroid is already starting or open.")
+            return
         profile = PROFILES[self.profile.get_selected()]
         arguments = ["start"]
         if profile == "size":
@@ -331,10 +336,19 @@ class WayvdWindow(Adw.ApplicationWindow):
         else:
             arguments.append(profile)
         try:
-            subprocess.Popen([WAYVD, *arguments])
+            self.start_process = subprocess.Popen([WAYVD, *arguments])
+            self.start_button.set_sensitive(False)
+            GLib.timeout_add(500, self.watch_start_process)
             self.set_status(f"Started profile: {profile}.")
         except OSError as error:
             self.set_status(f"Could not start {WAYVD}: {error}")
+
+    def watch_start_process(self):
+        if self.start_process and self.start_process.poll() is None:
+            return True
+        self.start_process = None
+        self.start_button.set_sensitive(True)
+        return False
 
     def stop_session(self, *_args):
         self.run(["stop"])
