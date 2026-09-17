@@ -87,6 +87,10 @@ class HelpWindow(Adw.Window):
     def __init__(self, parent):
         super().__init__(transient_for=parent, title="wayvd-ui Help")
         self.set_default_size(560, 420)
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.pack_end(button("Close", lambda *_args: self.close()))
+        toolbar.add_top_bar(header)
         text = """Session
 Choose a display profile, then select Start. Stop ends the active session.
 
@@ -111,7 +115,8 @@ fields. Hold either volume button to repeat the Android volume action."""
         output = Gtk.TextView(editable=False, monospace=True)
         output.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         output.get_buffer().set_text(text)
-        self.set_content(Gtk.ScrolledWindow(child=output))
+        toolbar.set_content(Gtk.ScrolledWindow(child=output))
+        self.set_content(toolbar)
 
 
 class WayvdWindow(Adw.ApplicationWindow):
