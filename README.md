@@ -94,8 +94,8 @@ apply outside the window:
 | `Home` | Home |
 | `Ctrl+M` | Menu |
 | `Ctrl+P` | Power |
-| `Ctrl+F5` | Volume up |
-| `Ctrl+F6` | Volume down |
+| `Ctrl+F5` | Volume down |
+| `Ctrl+F6` | Volume up |
 
 Shortcuts are disabled while typing in a text field, so normal entry editing
 remains unaffected.

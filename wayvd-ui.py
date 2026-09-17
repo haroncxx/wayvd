@@ -81,6 +81,39 @@ class LogWindow(Adw.Window):
         return False
 
 
+class HelpWindow(Adw.Window):
+    """A concise in-app reference for the available UI controls."""
+
+    def __init__(self, parent):
+        super().__init__(transient_for=parent, title="wayvd-ui Help")
+        self.set_default_size(560, 420)
+        text = """Session
+Choose a display profile, then select Start. Stop ends the active session.
+
+Shared folders
+Choose a host folder and optional Android folder name, then select Mount.
+Mount and Unmount use GNOME's system authentication dialog.
+
+Development
+Connect local ADB, install APKs, launch or clear a package, capture the
+display, record the screen, or open the logcat viewer.
+
+Android controls
+Esc             Back
+Home            Home
+Ctrl+M          Menu
+Ctrl+P          Power
+Ctrl+F5         Volume down
+Ctrl+F6         Volume up
+
+Shortcuts work only while this window is focused and are disabled in text
+fields. Hold either volume button to repeat the Android volume action."""
+        output = Gtk.TextView(editable=False, monospace=True)
+        output.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        output.get_buffer().set_text(text)
+        self.set_content(Gtk.ScrolledWindow(child=output))
+
+
 class WayvdWindow(Adw.ApplicationWindow):
     def __init__(self, application):
         super().__init__(application=application, title="wayvd")
@@ -90,6 +123,7 @@ class WayvdWindow(Adw.ApplicationWindow):
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
+        header.pack_end(button("Help", self.show_help))
         toolbar.add_top_bar(header)
 
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -209,6 +243,9 @@ class WayvdWindow(Adw.ApplicationWindow):
         self.status.set_text(text)
         return False
 
+    def show_help(self, *_args):
+        HelpWindow(self).present()
+
     def handle_shortcut(self, _controller, keyval, _keycode, state):
         # Preserve expected editing keys while an entry has focus.
         if isinstance(self.get_focus(), Gtk.Editable):
@@ -226,8 +263,8 @@ class WayvdWindow(Adw.ApplicationWindow):
                 Gdk.KEY_M: "menu",
                 Gdk.KEY_p: "power",
                 Gdk.KEY_P: "power",
-                Gdk.KEY_F5: "volume-up",
-                Gdk.KEY_F6: "volume-down",
+                Gdk.KEY_F5: "volume-down",
+                Gdk.KEY_F6: "volume-up",
             }.get(keyval)
         if not action:
             return False
