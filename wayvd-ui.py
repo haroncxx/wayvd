@@ -104,16 +104,16 @@ class WayvdWindow(Adw.ApplicationWindow):
         page.append(self.folders_group())
         page.append(self.development_group())
         page.append(self.controls_group())
-        page.append(self.key_monitor_group())
 
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim-label")
         page.append(self.status)
 
-        # The controller observes only key events delivered to this focused
-        # window. It returns False so normal GTK text and button input remains.
+        # These familiar Android Emulator shortcuts are scoped to this window.
+        # Returning True only for a recognized shortcut prevents its normal
+        # widget action; all other input continues through GTK unchanged.
         key_controller = Gtk.EventControllerKey()
-        key_controller.connect("key-pressed", self.log_key_pressed)
+        key_controller.connect("key-pressed", self.handle_shortcut)
         self.add_controller(key_controller)
 
     def group(self, title, description=None):
@@ -185,7 +185,10 @@ class WayvdWindow(Adw.ApplicationWindow):
         return group
 
     def controls_group(self):
-        group = self.group("Android controls", "These buttons affect Waydroid, not the host desktop.")
+        group = self.group(
+            "Android controls",
+            "Esc Back, Home Home, Ctrl+M Menu, Ctrl+P Power, Ctrl+F5/F6 Volume.",
+        )
         grid = Gtk.Grid(column_spacing=8, row_spacing=8)
         for index, action in enumerate(
             ["back", "home", "recents", "power", "volume-down", "volume-up", "mute"]
@@ -202,36 +205,34 @@ class WayvdWindow(Adw.ApplicationWindow):
         group.add(row)
         return group
 
-    def key_monitor_group(self):
-        group = self.group(
-            "Key monitor",
-            "Shows keys pressed while this wayvd-ui window is focused.",
-        )
-        row = Adw.ActionRow(title="Input log")
-        self.key_log = Gtk.TextView(editable=False, monospace=True)
-        self.key_log.set_size_request(330, 120)
-        self.key_log.set_wrap_mode(Gtk.WrapMode.CHAR)
-        scroll = Gtk.ScrolledWindow(child=self.key_log)
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        row.add_suffix(scroll)
-        row.add_suffix(button("Clear", self.clear_key_log))
-        group.add(row)
-        return group
-
     def set_status(self, text):
         self.status.set_text(text)
         return False
 
-    def log_key_pressed(self, _controller, keyval, keycode, state):
-        label = Gtk.accelerator_get_label(keyval, state)
-        name = Gdk.keyval_name(keyval) or str(keyval)
-        display = label or name
-        buffer = self.key_log.get_buffer()
-        buffer.insert(buffer.get_end_iter(), f"{display}  ({name}, code {keycode})\n")
-        return False
-
-    def clear_key_log(self, *_args):
-        self.key_log.get_buffer().set_text("")
+    def handle_shortcut(self, _controller, keyval, _keycode, state):
+        # Preserve expected editing keys while an entry has focus.
+        if isinstance(self.get_focus(), Gtk.Editable):
+            return False
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        action = None
+        if modifiers == 0:
+            action = {
+                Gdk.KEY_Escape: "back",
+                Gdk.KEY_Home: "home",
+            }.get(keyval)
+        elif modifiers == Gdk.ModifierType.CONTROL_MASK:
+            action = {
+                Gdk.KEY_m: "menu",
+                Gdk.KEY_M: "menu",
+                Gdk.KEY_p: "power",
+                Gdk.KEY_P: "power",
+                Gdk.KEY_F5: "volume-up",
+                Gdk.KEY_F6: "volume-down",
+            }.get(keyval)
+        if not action:
+            return False
+        self.run(["key", action])
+        return True
 
     def run(self, arguments, success=None):
         """Run short commands off the GTK thread and display stdout or errors."""

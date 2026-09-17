@@ -84,9 +84,21 @@ its standard system authentication dialog when elevation is required; the UI
 never reads or stores a password. The privileged helper is limited to bind
 mounts inside the invoking user's Waydroid shared-media directory.
 
-The UI also includes a key monitor. It logs only key events delivered while
-the `wayvd-ui` window is focused, and it never intercepts those events or
-records input from other applications.
+When `wayvd-ui` is focused, it provides familiar Android Emulator-style
+shortcuts. They invoke the same Waydroid actions as the UI buttons and do not
+apply outside the window:
+
+| Shortcut | Android action |
+|---|---|
+| `Esc` | Back |
+| `Home` | Home |
+| `Ctrl+M` | Menu |
+| `Ctrl+P` | Power |
+| `Ctrl+F5` | Volume up |
+| `Ctrl+F6` | Volume down |
+
+Shortcuts are disabled while typing in a text field, so normal entry editing
+remains unaffected.
 
 ## Starting Waydroid
 
