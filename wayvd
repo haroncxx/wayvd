@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: wayvd COMMAND [OPTION]
+
+Manage Waydroid display profiles, local files, and debugging tools.
+
+Commands:
+  start [PROFILE]    Start Waydroid with a display profile (default: portrait)
+  stop               Stop the active Waydroid session
+  status             Show Waydroid status and the configured display override
+  profiles           List available display profiles
+  mount PATH [NAME]  Share a host folder with Android as NAME
+  unmount NAME       Remove a shared-folder mount
+  mount-status NAME  Report whether an Android-visible folder is shared
+  adb                Connect the local Android SDK ADB to Waydroid
+  install APK        Install an APK through local ADB
+  launch PACKAGE     Launch an installed Android package
+  clear PACKAGE      Clear an installed Android package's data
+  screenshot [FILE]  Save a PNG screenshot (default: ~/Pictures/waydroid.png)
+  record FILE        Record the display to an MP4; press Ctrl-C to finish
+  logcat [ARGS...]   Stream Android logcat, optionally with logcat arguments
+  key ACTION         Send an AVD-style button action
+
+Options:
+  -h, --help         Display this help message and exit.
+
+Profiles for `wayvd start`:
+  default           Native Waydroid display configuration
+  portrait          Cover display in portrait mode (432x969)
+  fold              Inner display in portrait mode (920x954)
+  landscape         Cover display in landscape mode (969x432)
+  fold-landscape    Inner display in landscape mode (954x920)
+  last              Reopen the most recently used custom display profile
+  size WIDTHxHEIGHT Start with a custom display resolution, for example 600x900
+
+Examples:
+  wayvd mount ~/Downloads Download
+  wayvd mount ~/Projects/Android SharedProjects
+  wayvd unmount SharedProjects
+EOF
+}
+
+android_media_dir="$HOME/.local/share/waydroid/data/media/0"
+# Keep the most recently selected non-default resolution outside Waydroid's
+# data directory so it survives container restarts and image upgrades.
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/startwayvd"
+last_profile_file="$state_dir/last-profile"
+default_screenshot="$HOME/Pictures/waydroid.png"
+
+# Restrict Android-visible names to one path component, ensuring all mounts
+# remain below Waydroid's media directory rather than accepting path traversal.
+validate_folder_name() {
+  if [[ ! "$1" =~ ^[[:alnum:]][[:alnum:]._\ -]{0,63}$ ]]; then
+    printf 'Invalid Android folder name "%s". Use letters, numbers, spaces, dots, underscores, or hyphens.\n' "$1" >&2
+    exit 2
+  fi
+}
+
+# Bind a host directory into Android's shared media storage. This is a local
+# filesystem mount, so only this operation needs sudo.
+share_folder() {
+  local source="$1"
+  local name="$2"
+  source="$(realpath -e -- "$source")" || {
+    printf 'Host folder does not exist: %s\n' "$1" >&2
+    exit 1
+  }
+  if [[ ! -d "$source" ]]; then
+    printf 'Host path is not a directory: %s\n' "$source" >&2
+    exit 1
+  fi
+  validate_folder_name "$name"
+  local target="$android_media_dir/$name"
+  if sudo mountpoint -q "$target"; then
+    printf '%s is already shared with Android as %s.\n' "$source" "$name"
+    return
+  fi
+  sudo mkdir -p "$target"
+  sudo mount --bind "$source" "$target"
+  printf 'Shared %s with Android as %s.\n' "$source" "$name"
+}
+
+# Remove only the requested bind mount; host files remain untouched.
+unshare_folder() {
+  local name="$1"
+  validate_folder_name "$name"
+  local target="$android_media_dir/$name"
+  if ! sudo mountpoint -q "$target"; then
+    printf 'Android folder %s is not currently shared.\n' "$name" >&2
+    exit 1
+  fi
+  sudo umount "$target"
+  printf 'Removed the Waydroid share for Android folder %s.\n' "$name"
+}
+
+# Check a specific Android-visible shared folder without changing any mounts.
+show_downloads_status() {
+  local name="$1"
+  validate_folder_name "$name"
+  local target="$android_media_dir/$name"
+  if sudo mountpoint -q "$target"; then
+    printf 'Android folder %s is currently shared.\n' "$name"
+  else
+    printf 'Android folder %s is not currently shared.\n' "$name"
+  fi
+}
+
+# Let Waydroid choose its private bridge IP and connect the host SDK's ADB.
+# This is local ADB-over-virtual-network, not Android wireless debugging.
+connect_adb() {
+  export PATH="$HOME/Android/Sdk/platform-tools:$PATH"
+  if ! command -v adb >/dev/null 2>&1; then
+    printf 'Android SDK platform-tools (adb) was not found.\n' >&2
+    exit 1
+  fi
+  exec waydroid adb connect
+}
+
+# Return the private ADB serial for commands that need to target Waydroid
+# specifically when other physical devices or emulators are also connected.
+adb_target() {
+  export PATH="$HOME/Android/Sdk/platform-tools:$PATH"
+  if ! command -v adb >/dev/null 2>&1; then
+    printf 'Android SDK platform-tools (adb) was not found.\n' >&2
+    exit 1
+  fi
+  local ip
+  ip="$(waydroid status 2>/dev/null | awk '/IP address:/ { print $3; exit }')"
+  if [[ -z "$ip" ]]; then
+    printf 'Waydroid is not running; start a display profile first.\n' >&2
+    exit 1
+  fi
+  adb start-server >/dev/null
+  adb connect "$ip:5555" >&2
+  printf '%s:5555\n' "$ip"
+}
+
+# Execute an ADB command against Waydroid after ensuring its local connection exists.
+run_adb() {
+  local target
+  target="$(adb_target)"
+  adb -s "$target" "$@"
+}
+
+# Store explicit and named display resolutions so `last` can restore them.
+save_last_profile() {
+  mkdir -p "$state_dir"
+  printf '%sx%s\n' "$width" "$height" >"$last_profile_file"
+}
+
+# Apply display overrides before starting a fresh Waydroid session. Waydroid
+# reads these properties at session startup, not while its display is live.
+launch_profile() {
+  if [[ -n "$width" && -n "$height" ]]; then
+    save_last_profile
+  fi
+  waydroid prop set persist.waydroid.width "$width"
+  waydroid prop set persist.waydroid.height "$height"
+  waydroid session stop >/dev/null 2>&1 || true
+  waydroid session start >/dev/null 2>&1 &
+  exec waydroid show-full-ui
+}
+
+# Query the properties with a short timeout because Waydroid cannot answer
+# property requests while its session is fully stopped.
+show_status() {
+  waydroid status
+  printf '\nConfigured display override:\n'
+  printf '  width:  '
+  timeout 3 waydroid prop get persist.waydroid.width 2>/dev/null || printf 'unavailable\n'
+  printf '  height: '
+  timeout 3 waydroid prop get persist.waydroid.height 2>/dev/null || printf 'unavailable\n'
+}
+
+list_profiles() {
+  cat <<'EOF'
+default           Native Waydroid display configuration
+portrait          Cover display in portrait mode (432x969)
+fold              Inner display in portrait mode (920x954)
+landscape         Cover display in landscape mode (969x432)
+fold-landscape    Inner display in landscape mode (954x920)
+size WIDTHxHEIGHT Custom display resolution
+last              Most recently used custom display profile
+EOF
+}
+
+# Validate custom resolutions and prevent accidental shell-like input in state.
+validate_size() {
+  if [[ ! "$1" =~ ^([1-9][0-9]{0,3})x([1-9][0-9]{0,3})$ ]]; then
+    printf 'Invalid size "%s"; use WIDTHxHEIGHT, for example 600x900.\n' "$1" >&2
+    exit 2
+  fi
+  width="${BASH_REMATCH[1]}"
+  height="${BASH_REMATCH[2]}"
+}
+
+# Translate readable AVD-style buttons into Android input key event codes.
+send_key() {
+  local keycode
+  case "${2:-}" in
+    volume-up) keycode=24 ;;
+    volume-down) keycode=25 ;;
+    mute) keycode=164 ;;
+    power) keycode=26 ;;
+    wake) keycode=224 ;;
+    sleep) keycode=223 ;;
+    back) keycode=4 ;;
+    home) keycode=3 ;;
+    recents) keycode=187 ;;
+    menu) keycode=82 ;;
+    *)
+      printf 'Unknown button action: %s\n' "${2:-}" >&2
+      printf 'Use: volume-up, volume-down, mute, power, wake, sleep, back, home, recents, or menu.\n' >&2
+      exit 2
+      ;;
+  esac
+  run_adb shell input keyevent "$keycode"
+}
+
+# Dispatch non-start commands first. Starting is parsed separately because it
+# accepts a profile name or the two-word `size WIDTHxHEIGHT` profile.
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  stop)
+    exec waydroid session stop
+    ;;
+  adb)
+    connect_adb
+    ;;
+  status)
+    show_status
+    exit 0
+    ;;
+  profiles)
+    list_profiles
+    exit 0
+    ;;
+  mount)
+    [[ $# -eq 2 || $# -eq 3 ]] || { printf 'Usage: %s mount PATH [NAME]\n' "${0##*/}" >&2; exit 2; }
+    share_folder "$2" "${3:-$(basename "$2")}"
+    exit 0
+    ;;
+  unmount)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s unmount NAME\n' "${0##*/}" >&2; exit 2; }
+    unshare_folder "$2"
+    exit 0
+    ;;
+  mount-status)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s mount-status NAME\n' "${0##*/}" >&2; exit 2; }
+    show_downloads_status "$2"
+    exit 0
+    ;;
+  install)
+    [[ $# -eq 2 && -f "$2" ]] || { printf 'Usage: %s install APK\n' "${0##*/}" >&2; exit 2; }
+    run_adb install "$2"
+    exit 0
+    ;;
+  launch)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s launch PACKAGE\n' "${0##*/}" >&2; exit 2; }
+    run_adb shell monkey -p "$2" 1
+    exit 0
+    ;;
+  clear)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s clear PACKAGE\n' "${0##*/}" >&2; exit 2; }
+    run_adb shell pm clear "$2"
+    exit 0
+    ;;
+  screenshot)
+    [[ $# -le 2 ]] || { printf 'Usage: %s screenshot [FILE]\n' "${0##*/}" >&2; exit 2; }
+    screenshot_file="${2:-$default_screenshot}"
+    mkdir -p "$(dirname "$screenshot_file")"
+    # `exec-out` streams PNG bytes directly, avoiding a temporary Android file.
+    run_adb exec-out screencap -p >"$screenshot_file"
+    printf 'Saved screenshot to %s\n' "$screenshot_file"
+    exit 0
+    ;;
+  record)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s record FILE\n' "${0##*/}" >&2; exit 2; }
+    recording_file="$2"
+    android_recording=/sdcard/startwayvd-recording.mp4
+    mkdir -p "$(dirname "$recording_file")"
+    target="$(adb_target)"
+    # screenrecord writes inside Android. Always pull the finished file and
+    # clean it up after Ctrl-C or after Android reaches its recording limit.
+    trap 'adb -s "$target" pull "$android_recording" "$recording_file"; adb -s "$target" shell rm -f "$android_recording"' EXIT
+    adb -s "$target" shell screenrecord "$android_recording"
+    exit 0
+    ;;
+  logcat)
+    # Pass any remaining arguments through unchanged, for example `*:E`.
+    shift
+    run_adb logcat "$@"
+    ;;
+  key)
+    [[ $# -eq 2 ]] || { printf 'Usage: %s key ACTION\n' "${0##*/}" >&2; exit 2; }
+    send_key "$@"
+    exit 0
+    ;;
+  start)
+    ;;
+  "")
+    usage >&2
+    exit 2
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+# Named profiles take no additional arguments; only `size` consumes a third
+# argument for its explicit WIDTHxHEIGHT resolution.
+if [[ "${2:-portrait}" != size && $# -gt 2 ]]; then
+  printf 'Usage: %s start [PROFILE]\n' "${0##*/}" >&2
+  exit 2
+fi
+
+case "${2:-portrait}" in
+  default)
+    width=
+    height=
+    ;;
+  portrait)
+    width=432
+    height=969
+    ;;
+  fold)
+    width=920
+    height=954
+    ;;
+  landscape)
+    width=969
+    height=432
+    ;;
+  fold-landscape)
+    width=954
+    height=920
+    ;;
+  last)
+    if [[ ! -r "$last_profile_file" ]]; then
+      printf 'No previous custom display profile has been recorded.\n' >&2
+      exit 1
+    fi
+    validate_size "$(<"$last_profile_file")"
+    ;;
+  size)
+    [[ $# -eq 3 ]] || { printf 'Usage: %s start size WIDTHxHEIGHT\n' "${0##*/}" >&2; exit 2; }
+    validate_size "$3"
+    ;;
+  *)
+    printf 'Unknown display profile: %s\n' "${2:-}" >&2
+    printf 'Use "%s profiles" to list available profiles.\n' "${0##*/}" >&2
+    exit 2
+    ;;
+esac
+
+# Resolution overrides are applied when a Waydroid session starts. The default
+# profile clears both overrides so Waydroid uses its native full-screen setup.
+launch_profile
