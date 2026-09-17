@@ -47,6 +47,28 @@ Ensure `~/.local/bin` is present in your shell `PATH`, then verify the command:
 wayvd --help
 ```
 
+## Graphical interface
+
+`wayvd-ui.py` is an optional GTK4/libadwaita frontend for the command-line
+utility. It delegates every action to `wayvd`; the CLI remains the source of
+truth for profiles, folder mounts, ADB, and Android controls.
+
+Install it and its desktop entry:
+
+```bash
+install -Dm755 wayvd-ui.py ~/.local/bin/wayvd-ui
+install -Dm644 io.github.haroncxx.wayvd.desktop \
+  ~/.local/share/applications/io.github.haroncxx.wayvd.desktop
+```
+
+It requires the Python GTK4 and libadwaita bindings, provided as
+`python3-gi`, `gir1.2-gtk-4.0`, and `gir1.2-adw-1` on Debian/Ubuntu systems.
+Launch it from the app menu or with:
+
+```bash
+wayvd-ui
+```
+
 ## Starting Waydroid
 
 ```bash

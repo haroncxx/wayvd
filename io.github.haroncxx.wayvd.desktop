@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=wayvd
+Comment=Waydroid display and development controls
+Exec=wayvd-ui
+Terminal=false
+Type=Application
+Categories=Development;
+Keywords=waydroid;android;emulator;adb;
