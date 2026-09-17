@@ -84,6 +84,10 @@ its standard system authentication dialog when elevation is required; the UI
 never reads or stores a password. The privileged helper is limited to bind
 mounts inside the invoking user's Waydroid shared-media directory.
 
+The UI also includes a key monitor. It logs only key events delivered while
+the `wayvd-ui` window is focused, and it never intercepts those events or
+records input from other applications.
+
 ## Starting Waydroid
 
 ```bash

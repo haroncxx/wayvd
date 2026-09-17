@@ -11,7 +11,7 @@ import gi
 
 gi.require_version("Adw", "1")
 gi.require_version("Gtk", "4.0")
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk, Gdk
 
 
 WAYVD = os.environ.get("WAYVD_COMMAND", "wayvd")
@@ -103,10 +103,17 @@ class WayvdWindow(Adw.ApplicationWindow):
         page.append(self.folders_group())
         page.append(self.development_group())
         page.append(self.controls_group())
+        page.append(self.key_monitor_group())
 
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim-label")
         page.append(self.status)
+
+        # The controller observes only key events delivered to this focused
+        # window. It returns False so normal GTK text and button input remains.
+        key_controller = Gtk.EventControllerKey()
+        key_controller.connect("key-pressed", self.log_key_pressed)
+        self.add_controller(key_controller)
 
     def group(self, title, description=None):
         group = Adw.PreferencesGroup(title=title, description=description)
@@ -194,9 +201,36 @@ class WayvdWindow(Adw.ApplicationWindow):
         group.add(row)
         return group
 
+    def key_monitor_group(self):
+        group = self.group(
+            "Key monitor",
+            "Shows keys pressed while this wayvd-ui window is focused.",
+        )
+        row = Adw.ActionRow(title="Input log")
+        self.key_log = Gtk.TextView(editable=False, monospace=True)
+        self.key_log.set_size_request(330, 120)
+        self.key_log.set_wrap_mode(Gtk.WrapMode.CHAR)
+        scroll = Gtk.ScrolledWindow(child=self.key_log)
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        row.add_suffix(scroll)
+        row.add_suffix(button("Clear", self.clear_key_log))
+        group.add(row)
+        return group
+
     def set_status(self, text):
         self.status.set_text(text)
         return False
+
+    def log_key_pressed(self, _controller, keyval, keycode, state):
+        label = Gtk.accelerator_get_label(keyval, state)
+        name = Gdk.keyval_name(keyval) or str(keyval)
+        display = label or name
+        buffer = self.key_log.get_buffer()
+        buffer.insert(buffer.get_end_iter(), f"{display}  ({name}, code {keycode})\n")
+        return False
+
+    def clear_key_log(self, *_args):
+        self.key_log.get_buffer().set_text("")
 
     def run(self, arguments, success=None):
         """Run short commands off the GTK thread and display stdout or errors."""
