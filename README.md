@@ -18,7 +18,6 @@ shape of a Google Pixel 10 Pro Fold.
 - Connects `adb` to Waydroid through Waydroid's private host-only bridge.
 - Installs APKs, launches packages, clears app data, captures screenshots,
   records the screen, and streams logcat.
-- Sets Android media volume with a familiar 0–100 percentage.
 - Sends Android Back, Home, Recents, Power, volume, and related hardware-key
   events using readable action names.
 
@@ -185,9 +184,6 @@ wayvd record ~/Videos/demo.mp4
 # Stream Android logs. Arguments are passed directly to logcat.
 wayvd logcat
 wayvd logcat '*:E'
-
-# Set Android media volume to 50%.
-wayvd vol 50
 ```
 
 Without an explicit file path, screenshots are saved to:
@@ -216,15 +212,6 @@ wayvd key menu
 These affect Waydroid, not the host operating system. For example,
 `wayvd key volume-up` changes Android media volume rather than your laptop's
 desktop volume. They can be assigned as GNOME custom keyboard shortcuts.
-
-For an exact media-volume percentage, use:
-
-```bash
-wayvd vol 50
-```
-
-`wayvd` reads Waydroid's media-stream maximum and converts the percentage to
-the correct Android volume index for that build.
 
 ## Help
 
